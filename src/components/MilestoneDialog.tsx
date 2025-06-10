@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Milestone } from '../types/project';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -54,8 +54,11 @@ export function MilestoneDialog({ open, onOpenChange, milestone, onSave }: Miles
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>{milestone ? 'Edit Milestone' : 'Create Milestone'}</DialogTitle>
+          <DialogDescription>
+            {milestone ? 'Update the details of this milestone and timeline.' : 'Add a new milestone to your project.'}
+          </DialogDescription>
         </DialogHeader>
-        
+
         <div className="space-y-4">
           <div>
             <Label htmlFor="title">Title</Label>
