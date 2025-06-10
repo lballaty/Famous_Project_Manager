@@ -22,7 +22,9 @@ export function MainApp() {
     updateProject, 
     deleteProject,
     users, 
-    setUsers, 
+    setUsers,
+    user,
+    setUser, 
     storageConfig, 
     setStorageConfig,
     loading 
