@@ -1,4 +1,4 @@
-// src/components/ExportImport.tsx - Enhanced version
+// src/components/ExportImport.tsx - Updated with user persistence
 import React, { useRef, useState } from 'react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -21,12 +21,16 @@ import {
   FileSpreadsheet,
   CheckCircle,
   AlertCircle,
-  Shuffle
+  Shuffle,
+  Users
 } from 'lucide-react';
 import { Project, Task } from '../types/project';
+import { User } from '../types/user';
 import { useToast } from '../hooks/use-toast';
 import { 
   importSeedData, 
+  importJsonData,
+  exportData,
   addMoreSampleProjects,
   ImportOptions,
   ImportResult 
@@ -34,10 +38,12 @@ import {
 
 interface ExportImportProps {
   projects: Project[];
+  users: User[];
   onImport: (projects: Project[]) => void;
+  onImportUsers: (users: User[]) => void;
 }
 
-export function ExportImport({ projects, onImport }: ExportImportProps) {
+export function ExportImport({ projects, users, onImport, onImportUsers }: ExportImportProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const [importDialogOpen, setImportDialogOpen] = useState(false);
@@ -48,18 +54,20 @@ export function ExportImport({ projects, onImport }: ExportImportProps) {
 
   // Your existing CSV export function
   const exportToCSV = () => {
-    const allTasks: (Task & { projectName: string })[] = [];
+    const allTasks: (Task & { projectName: string; assigneeName: string })[] = [];
     
     projects.forEach(project => {
       project.tasks.forEach(task => {
+        const assignee = users.find(u => u.id === task.assigneeId);
         allTasks.push({
           ...task,
-          projectName: project.name
+          projectName: project.name,
+          assigneeName: assignee ? assignee.name : 'Unassigned'
         });
       });
     });
 
-    const headers = ['Project', 'Task Title', 'Description', 'Status', 'Priority', 'Assignee', 'Due Date'];
+    const headers = ['Project', 'Task Title', 'Description', 'Status', 'Priority', 'Assignee', 'Due Date', 'Estimated Hours', 'Tags'];
     const csvContent = [
       headers.join(','),
       ...allTasks.map(task => [
@@ -68,8 +76,10 @@ export function ExportImport({ projects, onImport }: ExportImportProps) {
         `"${task.description}"`,
         task.status,
         task.priority,
-        task.assignee,
-        task.dueDate
+        task.assigneeName,
+        task.dueDate,
+        task.estimatedHours || '',
+        `"${(task.tags || []).join('; ')}"`
       ].join(','))
     ].join('\n');
 
@@ -87,38 +97,16 @@ export function ExportImport({ projects, onImport }: ExportImportProps) {
     });
   };
 
-  // New JSON export function
+  // Enhanced JSON export function
   const exportToJSON = () => {
-    const allTasks: Task[] = projects.flatMap(p => p.tasks || []);
-    const allMilestones = projects.flatMap(p => p.milestones || []);
-    
-    const exportData = {
-      projects,
-      tasks: allTasks,
-      milestones: allMilestones,
-      exportDate: new Date().toISOString(),
-      version: '1.0'
-    };
-
-    const dataStr = JSON.stringify(exportData, null, 2);
-    const dataBlob = new Blob([dataStr], { type: 'application/json' });
-    const url = URL.createObjectURL(dataBlob);
-    
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `project-data-${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-
+    exportData(projects, users);
     toast({
       title: "Export Successful",
-      description: "Full project data exported to JSON file"
+      description: "Full project and user data exported to JSON file"
     });
   };
 
-  // Your existing file import function (enhanced)
+  // Enhanced file import function
   const handleFileImport = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -133,14 +121,26 @@ export function ExportImport({ projects, onImport }: ExportImportProps) {
           
           // Handle both old format (direct Project[]) and new format (with projects property)
           const importedProjects = Array.isArray(importedData) ? importedData : importedData.projects || [];
+          const importedUsers = importedData.users || [];
           
           if (importMode === 'merge') {
-            const existingIds = new Set(projects.map(p => p.id));
-            const newProjects = importedProjects.filter((p: Project) => !existingIds.has(p.id));
+            const existingProjectIds = new Set(projects.map(p => p.id));
+            const existingUserIds = new Set(users.map(u => u.id));
+            
+            const newProjects = importedProjects.filter((p: Project) => !existingProjectIds.has(p.id));
+            const newUsers = importedUsers.filter((u: User) => !existingUserIds.has(u.id));
+            
             onImport([...projects, ...newProjects]);
+            onImportUsers([...users, ...newUsers]);
           } else {
             onImport(importedProjects);
+            onImportUsers(importedUsers);
           }
+          
+          toast({
+            title: "Import Successful",
+            description: `Imported ${importedProjects.length} projects and ${importedUsers.length} users from ${file.name}`
+          });
         } else if (file.name.endsWith('.csv')) {
           const lines = content.split('\n');
           
@@ -153,7 +153,7 @@ export function ExportImport({ projects, onImport }: ExportImportProps) {
               description: values[2]?.replace(/"/g, '') || '',
               status: values[3] as 'todo' | 'in-progress' | 'completed' || 'todo',
               priority: values[4] as 'low' | 'medium' | 'high' || 'medium',
-              assignee: values[5] || '',
+              assigneeId: 'unassigned', // Will need to be mapped to actual user
               dueDate: values[6] || new Date().toISOString().split('T')[0],
               projectId: 'imported'
             };
@@ -169,7 +169,7 @@ export function ExportImport({ projects, onImport }: ExportImportProps) {
             endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
             progress: 0,
             tasks,
-            team: [],
+            teamMembers: [],
             color: '#3b82f6',
             milestones: []
           };
@@ -179,12 +179,13 @@ export function ExportImport({ projects, onImport }: ExportImportProps) {
           } else {
             onImport([importedProject]);
           }
+          
+          toast({
+            title: "Import Successful",
+            description: `Imported data from ${file.name}`
+          });
         }
         
-        toast({
-          title: "Import Successful",
-          description: `Imported data from ${file.name}`
-        });
         setImportDialogOpen(false);
       } catch (error) {
         toast({
@@ -199,7 +200,7 @@ export function ExportImport({ projects, onImport }: ExportImportProps) {
     event.target.value = '';
   };
 
-  // New seed data import
+  // Enhanced seed data import
   const handleSeedDataImport = async () => {
     setIsLoading(true);
     try {
@@ -211,7 +212,7 @@ export function ExportImport({ projects, onImport }: ExportImportProps) {
         includeUsers: true
       };
       
-      const result = importSeedData(projects, options, onImport);
+      const result = importSeedData(projects, users, options, onImport, onImportUsers);
       setImportResult(result);
       
       if (result.success) {
@@ -228,6 +229,7 @@ export function ExportImport({ projects, onImport }: ExportImportProps) {
         projectsAdded: 0,
         tasksAdded: 0,
         milestonesAdded: 0,
+        usersAdded: 0,
         errors: [error instanceof Error ? error.message : 'Unknown error']
       });
     } finally {
@@ -239,7 +241,7 @@ export function ExportImport({ projects, onImport }: ExportImportProps) {
   const handleGenerateMore = async () => {
     setIsLoading(true);
     try {
-      const result = addMoreSampleProjects(projects, sampleCount, onImport);
+      const result = addMoreSampleProjects(projects, users, sampleCount, onImport);
       setImportResult(result);
       
       if (result.success) {
@@ -256,6 +258,7 @@ export function ExportImport({ projects, onImport }: ExportImportProps) {
         projectsAdded: 0,
         tasksAdded: 0,
         milestonesAdded: 0,
+        usersAdded: 0,
         errors: [error instanceof Error ? error.message : 'Unknown error']
       });
     } finally {
@@ -302,10 +305,10 @@ export function ExportImport({ projects, onImport }: ExportImportProps) {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Upload className="h-5 w-5" />
-              Import Projects
+              Import Data
             </DialogTitle>
             <DialogDescription>
-              Choose what type of data to import into your project manager
+              Import projects, users, and tasks into your project manager
             </DialogDescription>
           </DialogHeader>
 
@@ -320,13 +323,35 @@ export function ExportImport({ projects, onImport }: ExportImportProps) {
               <AlertDescription className="space-y-1">
                 <p className="font-medium">{importResult.message}</p>
                 {importResult.success && (
-                  <p className="text-sm">
-                    Added: {importResult.projectsAdded} projects, {importResult.tasksAdded} tasks, {importResult.milestonesAdded} milestones
-                  </p>
+                  <div className="text-sm space-y-1">
+                    <p>✅ Projects: {importResult.projectsAdded}</p>
+                    <p>✅ Tasks: {importResult.tasksAdded}</p>
+                    <p>✅ Milestones: {importResult.milestonesAdded}</p>
+                    <p>✅ Users: {importResult.usersAdded}</p>
+                  </div>
+                )}
+                {importResult.errors.length > 0 && (
+                  <ul className="text-sm list-disc list-inside space-y-1">
+                    {importResult.errors.slice(0, 3).map((error, index) => (
+                      <li key={index} className="text-red-600">{error}</li>
+                    ))}
+                    {importResult.errors.length > 3 && (
+                      <li className="text-red-600">... and {importResult.errors.length - 3} more errors</li>
+                    )}
+                  </ul>
                 )}
               </AlertDescription>
             </Alert>
           )}
+
+          {/* Current Data Summary */}
+          <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
+            <div className="text-sm">
+              <p className="font-medium">Current Data:</p>
+              <p className="text-muted-foreground">{projects.length} projects, {users.length} users</p>
+            </div>
+            <Users className="h-8 w-8 text-muted-foreground" />
+          </div>
 
           {/* Import Mode Toggle */}
           <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
@@ -334,8 +359,8 @@ export function ExportImport({ projects, onImport }: ExportImportProps) {
               <Label className="text-sm font-medium">Import Mode</Label>
               <p className="text-xs text-muted-foreground">
                 {importMode === 'replace' 
-                  ? 'Replace all existing projects' 
-                  : 'Add to existing projects'
+                  ? 'Replace all existing data' 
+                  : 'Add to existing data'
                 }
               </p>
             </div>
@@ -370,26 +395,34 @@ export function ExportImport({ projects, onImport }: ExportImportProps) {
 
             <TabsContent value="seed" className="space-y-4">
               <div className="space-y-2">
-                <h4 className="font-medium">Sample Project Data</h4>
-                <p className="text-sm text-muted-foreground">
-                  Import 3 realistic sample projects with tasks, milestones, and team assignments.
-                </p>
+                <h4 className="font-medium">Complete Sample Dataset</h4>
+                <div className="text-sm text-muted-foreground space-y-1">
+                  <p>Import comprehensive sample data including:</p>
+                  <ul className="list-disc list-inside ml-2 space-y-1">
+                    <li>5 realistic projects with 16-week timelines</li>
+                    <li>9 team members with full profiles</li>
+                    <li>50+ tasks with dependencies</li>
+                    <li>40+ milestones across projects</li>
+                    <li>Team assignments and role allocations</li>
+                  </ul>
+                </div>
               </div>
               <Button 
                 onClick={handleSeedDataImport}
                 disabled={isLoading}
                 className="w-full"
               >
-                {isLoading ? 'Importing...' : 'Import Sample Projects'}
+                {isLoading ? 'Importing...' : 'Import Complete Sample Dataset'}
               </Button>
             </TabsContent>
 
             <TabsContent value="file" className="space-y-4">
               <div className="space-y-2">
-                <h4 className="font-medium">JSON/CSV File Import</h4>
-                <p className="text-sm text-muted-foreground">
-                  Import from JSON (complete project data) or CSV (tasks only) files.
-                </p>
+                <h4 className="font-medium">File Import</h4>
+                <div className="text-sm text-muted-foreground">
+                  <p><strong>JSON:</strong> Complete project and user data</p>
+                  <p><strong>CSV:</strong> Tasks only (creates new project)</p>
+                </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="file-input" className="text-sm">Select File</Label>
@@ -406,9 +439,9 @@ export function ExportImport({ projects, onImport }: ExportImportProps) {
 
             <TabsContent value="generate" className="space-y-4">
               <div className="space-y-2">
-                <h4 className="font-medium">Generate Random Projects</h4>
+                <h4 className="font-medium">Generate Test Projects</h4>
                 <p className="text-sm text-muted-foreground">
-                  Create additional sample projects with random data for testing.
+                  Create additional sample projects with random data. Team members will be assigned from existing users.
                 </p>
               </div>
               <div className="space-y-3">
@@ -424,15 +457,21 @@ export function ExportImport({ projects, onImport }: ExportImportProps) {
                     className="w-20"
                     disabled={isLoading}
                   />
+                  <span className="text-xs text-muted-foreground">projects</span>
                 </div>
                 <Button 
                   onClick={handleGenerateMore}
-                  disabled={isLoading}
+                  disabled={isLoading || users.length === 0}
                   className="w-full"
                   variant="outline"
                 >
                   {isLoading ? 'Generating...' : `Generate ${sampleCount} Projects`}
                 </Button>
+                {users.length === 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    Import users first to enable project generation with team assignments
+                  </p>
+                )}
               </div>
             </TabsContent>
           </Tabs>

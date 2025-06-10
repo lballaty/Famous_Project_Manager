@@ -1,3 +1,9 @@
+
+// Import the new user types
+import { User, TeamMember } from './user';
+
+
+// Update your existing Project interface
 export interface Project {
   id: string;
   name: string;
@@ -8,22 +14,41 @@ export interface Project {
   endDate: string;
   progress: number;
   tasks: Task[];
-  team: string[];
+  teamMembers: TeamMember[]; // Changed from team: string[]
   color: string;
   milestones?: Milestone[];
   dependencies?: string[];
+  projectManager?: string; // userId
+  client?: {
+    name: string;
+    email: string;
+    phone?: string;
+    company: string;
+  };
 }
 
+// Update your existing Task interface
 export interface Task {
   id: string;
   title: string;
   description: string;
   status: 'todo' | 'in-progress' | 'completed';
-  assignee: string;
+  assigneeId: string; // Changed from assignee: string
   dueDate: string;
   priority: 'low' | 'medium' | 'high';
   projectId: string;
   dependencies?: string[];
+  estimatedHours?: number;
+  actualHours?: number;
+  tags?: string[];
+  watchers?: string[]; // userIds who get notifications
+}
+
+// Add new StorageConfig interface
+export interface StorageConfig {
+  type: 'local' | 'supabase';
+  supabaseUrl?: string;
+  supabaseKey?: string;
 }
 
 export interface Milestone {
