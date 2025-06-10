@@ -1,4 +1,5 @@
-import React from 'react';
+// Updated MainApp.tsx with mobile responsiveness
+import React, { useState } from 'react';
 import { useAppContext } from '../contexts/AppContext';
 import { Dashboard } from './Dashboard';
 import { TaskList } from './TaskList';
@@ -10,7 +11,33 @@ import { StorageSettings } from './StorageSettings';
 import { ProjectTracker } from './ProjectTracker';
 import { Button } from './ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { BarChart3, List, Calendar, Link, Settings, FolderOpen, LogOut, GitBranch } from 'lucide-react';
+import { 
+  Sheet, 
+  SheetContent, 
+  SheetDescription, 
+  SheetHeader, 
+  SheetTitle, 
+  SheetTrigger 
+} from './ui/sheet';
+import { 
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
+import { 
+  BarChart3, 
+  List, 
+  Calendar, 
+  Link, 
+  Settings, 
+  FolderOpen, 
+  LogOut, 
+  GitBranch, 
+  Menu,
+  MoreVertical
+} from 'lucide-react';
 import { useRoles } from '../hooks/useRoles';
 import { Task, Project } from '../types/project';
 
@@ -30,6 +57,8 @@ export function MainApp() {
     loading 
   } = useAppContext();
   const { canEdit, canDelete } = useRoles();
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   if (loading) {
     return (
@@ -42,8 +71,6 @@ export function MainApp() {
   const allTasks = projects.flatMap(project => 
     project.tasks.map(task => ({ ...task, projectId: project.id }))
   );
-
-  const projectOptions = projects.map(p => ({ id: p.id, name: p.name }));
 
   const handleImport = (importedProjects: any[]) => {
     setProjects([...projects, ...importedProjects]);
@@ -104,67 +131,133 @@ export function MainApp() {
     }
   };
 
+  // Navigation items for both desktop tabs and mobile menu
+  const navigationItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
+    { id: 'projects', label: 'Projects', icon: FolderOpen },
+    { id: 'tasks', label: 'Tasks', icon: List },
+    { id: 'timeline', label: 'Timeline', icon: Calendar },
+    { id: 'dependencies', label: 'Dependencies', icon: Link },
+    { id: 'graph', label: 'Graph', icon: GitBranch },
+    { id: 'settings', label: 'Settings', icon: Settings },
+  ];
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       <div className="container mx-auto p-4">
+        {/* Mobile-responsive header */}
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold">Project Tracker</h1>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            {/* Mobile menu trigger - only shows on mobile */}
+            <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+              <SheetTrigger asChild>
+                <Button variant="outline" size="sm" className="md:hidden">
+                  <Menu className="h-4 w-4" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="left" className="w-[280px]">
+                <SheetHeader>
+                  <SheetTitle>Project Tracker</SheetTitle>
+                  <SheetDescription>
+                    Navigate through your project management views
+                  </SheetDescription>
+                </SheetHeader>
+                <div className="mt-6 space-y-2">
+                  {navigationItems.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <Button
+                        key={item.id}
+                        variant={activeTab === item.id ? "default" : "ghost"}
+                        className="w-full justify-start"
+                        onClick={() => {
+                          setActiveTab(item.id);
+                          setMobileMenuOpen(false);
+                        }}
+                      >
+                        <Icon className="h-4 w-4 mr-2" />
+                        {item.label}
+                      </Button>
+                    );
+                  })}
+                </div>
+              </SheetContent>
+            </Sheet>
+
+            <h1 className="text-xl md:text-3xl font-bold">Project Tracker</h1>
+          </div>
+          
+          {/* Desktop header actions - hidden on mobile */}
+          <div className="hidden md:flex items-center gap-4">
             <span className="text-sm text-muted-foreground">Welcome, {user?.name}</span>
-<ExportImport 
-  projects={projects} 
-  users={users}
-  onImport={handleImport}
-  onImportUsers={setUsers}
-/>
+            <ExportImport 
+              projects={projects} 
+              users={users}
+              onImport={handleImport}
+              onImportUsers={setUsers}
+            />
             <Button onClick={handleLogout} variant="outline">
               <LogOut className="h-4 w-4 mr-2" />
               Logout
             </Button>
           </div>
+
+          {/* Mobile header actions - only shows on mobile */}
+          <div className="md:hidden">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <div className="px-2 py-1.5 text-sm font-medium">
+                  Welcome, {user?.name}
+                </div>
+                <DropdownMenuSeparator />
+                
+                <DropdownMenuItem className="p-0">
+                  <ExportImport 
+                    projects={projects} 
+                    users={users}
+                    onImport={handleImport}
+                    onImportUsers={setUsers}
+                  />
+                </DropdownMenuItem>
+                
+                <DropdownMenuSeparator />
+                
+                <DropdownMenuItem onClick={handleLogout}>
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Logout
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
 
-        <Tabs defaultValue="dashboard" className="w-full">
-          <TabsList className="grid w-full grid-cols-7">
-            <TabsTrigger value="dashboard" className="flex items-center gap-2">
-              <BarChart3 className="h-4 w-4" />
-              Dashboard
-            </TabsTrigger>
-            <TabsTrigger value="projects" className="flex items-center gap-2">
-              <FolderOpen className="h-4 w-4" />
-              Projects
-            </TabsTrigger>
-            <TabsTrigger value="tasks" className="flex items-center gap-2">
-              <List className="h-4 w-4" />
-              Tasks
-            </TabsTrigger>
-            <TabsTrigger value="timeline" className="flex items-center gap-2">
-              <Calendar className="h-4 w-4" />
-              Timeline
-            </TabsTrigger>
-            <TabsTrigger value="dependencies" className="flex items-center gap-2">
-              <Link className="h-4 w-4" />
-              Dependencies
-            </TabsTrigger>
-            <TabsTrigger value="graph" className="flex items-center gap-2">
-              <GitBranch className="h-4 w-4" />
-              Graph
-            </TabsTrigger>
-            <TabsTrigger value="settings" className="flex items-center gap-2">
-              <Settings className="h-4 w-4" />
-              Settings
-            </TabsTrigger>
-          </TabsList>
+        {/* Desktop navigation tabs - hidden on mobile */}
+        <div className="hidden md:block">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="grid w-full grid-cols-7">
+              {navigationItems.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <TabsTrigger key={item.id} value={item.id} className="flex items-center gap-2">
+                    <Icon className="h-4 w-4" />
+                    <span className="hidden lg:inline">{item.label}</span>
+                  </TabsTrigger>
+                );
+              })}
+            </TabsList>
+          </Tabs>
+        </div>
 
-          <TabsContent value="dashboard" className="mt-6">
-            <Dashboard projects={projects} />
-          </TabsContent>
-
-          <TabsContent value="projects" className="mt-6">
-            <ProjectTracker />
-          </TabsContent>
-
-          <TabsContent value="tasks" className="mt-6">
+        {/* Content area - works for both mobile and desktop */}
+        <div className="mt-6">
+          {activeTab === 'dashboard' && <Dashboard projects={projects} />}
+          {activeTab === 'projects' && <ProjectTracker />}
+          {activeTab === 'tasks' && (
             <TaskList 
               tasks={allTasks} 
               projects={projects}
@@ -172,27 +265,17 @@ export function MainApp() {
               onTaskDelete={handleTaskDelete}
               onTaskCreate={handleTaskCreate}
             />
-          </TabsContent>
-
-          <TabsContent value="timeline" className="mt-6">
-            <Timeline projects={projects} />
-          </TabsContent>
-
-          <TabsContent value="dependencies" className="mt-6">
-            <DependencyTracker projects={projects} />
-          </TabsContent>
-
-          <TabsContent value="graph" className="mt-6">
-            <DependencyGraph projects={projects} />
-          </TabsContent>
-
-          <TabsContent value="settings" className="mt-6">
+          )}
+          {activeTab === 'timeline' && <Timeline projects={projects} />}
+          {activeTab === 'dependencies' && <DependencyTracker projects={projects} />}
+          {activeTab === 'graph' && <DependencyGraph projects={projects} />}
+          {activeTab === 'settings' && (
             <StorageSettings 
               config={storageConfig} 
               onConfigChange={setStorageConfig} 
             />
-          </TabsContent>
-        </Tabs>
+          )}
+        </div>
       </div>
     </div>
   );
