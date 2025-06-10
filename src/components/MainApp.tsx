@@ -21,8 +21,8 @@ export function MainApp() {
     addProject, 
     updateProject, 
     deleteProject,
-    user, 
-    setUser, 
+    users, 
+    setUsers, 
     storageConfig, 
     setStorageConfig,
     loading 
@@ -109,7 +109,12 @@ export function MainApp() {
           <h1 className="text-3xl font-bold">Project Tracker</h1>
           <div className="flex items-center gap-4">
             <span className="text-sm text-muted-foreground">Welcome, {user?.name}</span>
-            <ExportImport projects={projects} onImport={handleImport} />
+<ExportImport 
+  projects={projects} 
+  users={users}
+  onImport={handleImport}
+  onImportUsers={setUsers}
+/>
             <Button onClick={handleLogout} variant="outline">
               <LogOut className="h-4 w-4 mr-2" />
               Logout

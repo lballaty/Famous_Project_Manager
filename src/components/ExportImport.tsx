@@ -38,12 +38,17 @@ import {
 
 interface ExportImportProps {
   projects: Project[];
-  users: User[];
+  users?: User[]; // Make it optional with default
   onImport: (projects: Project[]) => void;
-  onImportUsers: (users: User[]) => void;
+  onImportUsers?: (users: User[]) => void; // Make it optional
 }
 
-export function ExportImport({ projects, users, onImport, onImportUsers }: ExportImportProps) {
+export function ExportImport({ 
+  projects, 
+  users = [], // Default to empty array
+  onImport, 
+  onImportUsers = () => {} // Default to empty function
+}: ExportImportProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const [importDialogOpen, setImportDialogOpen] = useState(false);
@@ -345,13 +350,15 @@ export function ExportImport({ projects, users, onImport, onImportUsers }: Expor
           )}
 
           {/* Current Data Summary */}
-          <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
-            <div className="text-sm">
-              <p className="font-medium">Current Data:</p>
-              <p className="text-muted-foreground">{projects.length} projects, {users.length} users</p>
-            </div>
-            <Users className="h-8 w-8 text-muted-foreground" />
-          </div>
+<div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
+  <div className="text-sm">
+    <p className="font-medium">Current Data:</p>
+    <p className="text-muted-foreground">
+      {projects?.length || 0} projects, {users?.length || 0} users
+    </p>
+  </div>
+  <Users className="h-8 w-8 text-muted-foreground" />
+</div>
 
           {/* Import Mode Toggle */}
           <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
