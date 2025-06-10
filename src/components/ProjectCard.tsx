@@ -2,7 +2,9 @@ import { Project } from '@/types/project';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Calendar, Users, Clock } from 'lucide-react';
+import { Calendar, Users, Clock, Lock } from 'lucide-react';
+import { useProjectLock, LockStatusIndicator } from './ProjectLockComponents';
+
 
 interface ProjectCardProps {
   project: Project;
@@ -23,6 +25,7 @@ const priorityColors = {
 };
 
 export const ProjectCard = ({ project, onClick }: ProjectCardProps) => {
+  const { lock, canEdit, isOwnLock } = useProjectLock(project.id);
   return (
     <Card 
       className="cursor-pointer hover:shadow-lg transition-all duration-200 transform hover:-translate-y-1"

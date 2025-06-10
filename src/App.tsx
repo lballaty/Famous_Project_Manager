@@ -1,9 +1,11 @@
+// src/App.tsx - Updated to include LockProvider
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AppProvider, useAppContext } from "./contexts/AppContext";
+import { LockProvider } from "./contexts/LockContext"; // NEW IMPORT
 import { AuthForm } from "./components/AuthForm";
 import { MainApp } from "./components/MainApp";
 
@@ -24,9 +26,11 @@ const App = () => (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <AppProvider>
-          <Toaster />
-          <Sonner />
-          <AppContent />
+          <LockProvider>  {/* NEW: Wrap with LockProvider */}
+            <Toaster />
+            <Sonner />
+            <AppContent />
+          </LockProvider>  {/* NEW: Close LockProvider */}
         </AppProvider>
       </TooltipProvider>
     </QueryClientProvider>

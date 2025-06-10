@@ -1,168 +1,155 @@
+// src/components/Settings.tsx or wherever your main settings component is
+// This integrates perfectly with your existing StorageSettings component
+
 import React, { useState } from 'react';
-import { StorageConfig } from '../types/project';
+import { useAppContext } from '../contexts/AppContext';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Button } from './ui/button';
-import { Input } from './ui/input';
-import { Label } from './ui/label';
-import { RadioGroup, RadioGroupItem } from './ui/radio-group';
 import { Badge } from './ui/badge';
-import { Database, HardDrive, Settings } from 'lucide-react';
-import { useToast } from '../hooks/use-toast';
+import { Button } from './ui/button';
+import { 
+  Settings as SettingsIcon,
+  Database,
+  Sync,
+  Filter,
+  Lock,
+  FileText,
+  AlertTriangle
+} from 'lucide-react';
 
-interface StorageSettingsProps {
-  config: StorageConfig;
-  onConfigChange: (config: StorageConfig) => void;
-}
+// Import your existing component
+import { StorageSettings } from './StorageSettings';
 
-export function StorageSettings({ config, onConfigChange }: StorageSettingsProps) {
-  const [tempConfig, setTempConfig] = useState<StorageConfig>(config);
-  const [isTestingConnection, setIsTestingConnection] = useState(false);
-  const { toast } = useToast();
+// Import new components
+import { SyncStatus } from './SyncStatus';
+import { ErrorDashboard } from './ErrorDashboard';
+import { LoggingControls } from './LoggingControls';
+import { SelectiveSyncInterface } from './SelectiveSyncComponents';
+import { ActiveLocksPanel } from './ProjectLockComponents';
 
-  const handleSave = () => {
-    onConfigChange(tempConfig);
-    localStorage.setItem('storageConfig', JSON.stringify(tempConfig));
-    toast({
-      title: "Settings Saved",
-      description: "Storage configuration has been updated"
-    });
-  };
-
-  const testSupabaseConnection = async () => {
-    if (!tempConfig.supabaseUrl || !tempConfig.supabaseKey) {
-      toast({
-        title: "Missing Configuration",
-        description: "Please provide both Supabase URL and API key",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    setIsTestingConnection(true);
-    
-    try {
-      // Simple test - try to fetch from Supabase
-      const response = await fetch(`${tempConfig.supabaseUrl}/rest/v1/`, {
-        headers: {
-          'apikey': tempConfig.supabaseKey,
-          'Authorization': `Bearer ${tempConfig.supabaseKey}`
-        }
-      });
-      
-      if (response.ok) {
-        toast({
-          title: "Connection Successful",
-          description: "Successfully connected to Supabase"
-        });
-      } else {
-        throw new Error('Connection failed');
-      }
-    } catch (error) {
-      toast({
-        title: "Connection Failed",
-        description: "Could not connect to Supabase. Check your credentials.",
-        variant: "destructive"
-      });
-    } finally {
-      setIsTestingConnection(false);
-    }
-  };
+export function Settings() {
+  const { storageConfig, setStorageConfig, storageService, syncErrors } = useAppContext();
+  const [activeTab, setActiveTab] = useState('storage');
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Settings className="h-5 w-5" />
-          Storage Configuration
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        <div className="flex items-center gap-2 mb-4">
-          <span className="text-sm">Current Storage:</span>
-          <Badge variant={config.type === 'local' ? 'secondary' : 'default'}>
-            {config.type === 'local' ? 'Local Storage' : 'Supabase'}
-          </Badge>
-        </div>
+    <div className="container mx-auto p-6 max-w-6xl">
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold flex items-center gap-2">
+          <SettingsIcon className="h-8 w-8" />
+          Settings
+        </h1>
+        <p className="text-muted-foreground mt-2">
+          Manage your application preferences, storage, and sync settings
+        </p>
+      </div>
 
-        <RadioGroup 
-          value={tempConfig.type} 
-          onValueChange={(value: 'local' | 'supabase') => 
-            setTempConfig({ ...tempConfig, type: value })
-          }
-        >
-          <div className="flex items-center space-x-2 p-4 border rounded-lg">
-            <RadioGroupItem value="local" id="local" />
-            <div className="flex items-center gap-2 flex-1">
-              <HardDrive className="h-4 w-4" />
-              <div>
-                <Label htmlFor="local" className="font-medium">Local Storage</Label>
-                <p className="text-sm text-muted-foreground">
-                  Store data in your browser's local storage
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <TabsList className="grid w-full grid-cols-6">
+          <TabsTrigger value="storage" className="flex items-center gap-2">
+            <Database className="h-4 w-4" />
+            Storage
+          </TabsTrigger>
+          <TabsTrigger value="sync" className="flex items-center gap-2">
+            <Sync className="h-4 w-4" />
+            Sync Status
+          </TabsTrigger>
+          <TabsTrigger value="selective" className="flex items-center gap-2">
+            <Filter className="h-4 w-4" />
+            Selective Sync
+          </TabsTrigger>
+          <TabsTrigger value="locks" className="flex items-center gap-2">
+            <Lock className="h-4 w-4" />
+            Project Locks
+          </TabsTrigger>
+          <TabsTrigger value="logging" className="flex items-center gap-2">
+            <FileText className="h-4 w-4" />
+            Logging
+          </TabsTrigger>
+          <TabsTrigger value="errors" className="flex items-center gap-2 relative">
+            <AlertTriangle className="h-4 w-4" />
+            Errors
+            {syncErrors.length > 0 && (
+              <Badge variant="destructive" className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 text-xs">
+                {syncErrors.length}
+              </Badge>
+            )}
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Storage Configuration - Your existing component */}
+        <TabsContent value="storage">
+          <StorageSettings 
+            config={storageConfig} 
+            onConfigChange={setStorageConfig} 
+          />
+        </TabsContent>
+
+        {/* Sync Status - Enhanced version of your existing SyncStatus */}
+        <TabsContent value="sync">
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Sync className="h-5 w-5" />
+                  Synchronization Status
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <SyncStatus storageService={storageService} />
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        {/* Selective Sync - NEW */}
+        <TabsContent value="selective">
+          <SelectiveSyncInterface />
+        </TabsContent>
+
+        {/* Project Locks - NEW */}
+        <TabsContent value="locks">
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Lock className="h-5 w-5" />
+                  Project Lock Management
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-muted-foreground mb-4">
+                  Lock projects to prevent editing conflicts when working offline or making major changes.
                 </p>
-              </div>
-            </div>
-          </div>
-          
-          <div className="flex items-center space-x-2 p-4 border rounded-lg">
-            <RadioGroupItem value="supabase" id="supabase" />
-            <div className="flex items-center gap-2 flex-1">
-              <Database className="h-4 w-4" />
-              <div>
-                <Label htmlFor="supabase" className="font-medium">Supabase</Label>
-                <p className="text-sm text-muted-foreground">
-                  Store data in Supabase cloud database
-                </p>
-              </div>
-            </div>
-          </div>
-        </RadioGroup>
-
-        {tempConfig.type === 'supabase' && (
-          <div className="space-y-4 p-4 bg-muted/50 rounded-lg">
-            <div className="space-y-2">
-              <Label htmlFor="supabaseUrl">Supabase URL</Label>
-              <Input
-                id="supabaseUrl"
-                placeholder="https://your-project.supabase.co"
-                value={tempConfig.supabaseUrl || ''}
-                onChange={(e) => setTempConfig({
-                  ...tempConfig,
-                  supabaseUrl: e.target.value
-                })}
-              />
-            </div>
+              </CardContent>
+            </Card>
             
-            <div className="space-y-2">
-              <Label htmlFor="supabaseKey">Supabase Anon Key</Label>
-              <Input
-                id="supabaseKey"
-                type="password"
-                placeholder="Your Supabase anon key"
-                value={tempConfig.supabaseKey || ''}
-                onChange={(e) => setTempConfig({
-                  ...tempConfig,
-                  supabaseKey: e.target.value
-                })}
-              />
-            </div>
+            <ActiveLocksPanel />
             
-            <Button 
-              onClick={testSupabaseConnection}
-              disabled={isTestingConnection}
-              variant="outline"
-              className="w-full"
-            >
-              {isTestingConnection ? 'Testing...' : 'Test Connection'}
-            </Button>
+            <Card>
+              <CardContent className="p-6">
+                <div className="text-sm text-muted-foreground space-y-2">
+                  <div><strong>How Project Locks Work:</strong></div>
+                  <div>• Lock a project before working offline to prevent conflicts</div>
+                  <div>• Other users can't edit locked projects</div>
+                  <div>• Locks automatically expire after the set duration</div>
+                  <div>• Admins can force unlock if needed</div>
+                  <div>• You can extend or remove your own locks anytime</div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
-        )}
+        </TabsContent>
 
-        <div className="flex gap-2">
-          <Button onClick={handleSave} className="flex-1">
-            Save Configuration
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+        {/* Logging Configuration - NEW */}
+        <TabsContent value="logging">
+          <LoggingControls />
+        </TabsContent>
+
+        {/* Error Dashboard - NEW */}
+        <TabsContent value="errors">
+          <ErrorDashboard />
+        </TabsContent>
+      </Tabs>
+    </div>
   );
 }

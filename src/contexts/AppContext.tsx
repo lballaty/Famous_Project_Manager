@@ -1,23 +1,26 @@
-// src/contexts/AppContext.tsx - Updated with user persistence
+// src/contexts/AppContext.tsx - Enhanced with error handling and logging integration
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Project, User } from '../types/project';
 import { User as EnhancedUser, TeamMember } from '../types/user';
+import { SyncError, SyncMetrics, LogCategory } from '../types/sync';
+import { HybridStorageService, StorageConfig } from '../lib/hybridStorage';
+import { syncLogger } from '../utils/logger';
 
 interface AppContextType {
   sidebarOpen: boolean;
   toggleSidebar: () => void;
   projects: Project[];
   setProjects: (projects: Project[]) => void;
-  addProject: (project: Omit<Project, 'id'>) => void;
-  updateProject: (id: string, updates: Partial<Project>) => void;
-  deleteProject: (id: string) => void;
+  addProject: (project: Omit<Project, 'id'>) => Promise<void>;
+  updateProject: (id: string, updates: Partial<Project>) => Promise<void>;
+  deleteProject: (id: string) => Promise<void>;
   
   // Enhanced user management
   users: EnhancedUser[];
   setUsers: (users: EnhancedUser[]) => void;
-  addUser: (user: Omit<EnhancedUser, 'id'>) => void;
-  updateUser: (id: string, updates: Partial<EnhancedUser>) => void;
-  deleteUser: (id: string) => void;
+  addUser: (user: Omit<EnhancedUser, 'id'>) => Promise<void>;
+  updateUser: (id: string, updates: Partial<EnhancedUser>) => Promise<void>;
+  deleteUser: (id: string) => Promise<void>;
   getUserById: (id: string) => EnhancedUser | undefined;
   
   user: User | null;
@@ -27,12 +30,14 @@ interface AppContextType {
   currentView: string;
   setCurrentView: (view: string) => void;
   loading: boolean;
-}
 
-interface StorageConfig {
-  type: 'local' | 'supabase';
-  supabaseUrl?: string;
-  supabaseKey?: string;
+  // NEW: Enhanced sync and error management
+  storageService: HybridStorageService;
+  syncErrors: SyncError[];
+  syncMetrics: SyncMetrics;
+  clearSyncErrors: (errorIds?: string[]) => void;
+  retryFailedSync: (errorId: string) => Promise<void>;
+  refreshData: () => Promise<void>;
 }
 
 const defaultAppContext: AppContextType = {
@@ -40,14 +45,14 @@ const defaultAppContext: AppContextType = {
   toggleSidebar: () => {},
   projects: [],
   setProjects: () => {},
-  addProject: () => {},
-  updateProject: () => {},
-  deleteProject: () => {},
+  addProject: async () => {},
+  updateProject: async () => {},
+  deleteProject: async () => {},
   users: [],
   setUsers: () => {},
-  addUser: () => {},
-  updateUser: () => {},
-  deleteUser: () => {},
+  addUser: async () => {},
+  updateUser: async () => {},
+  deleteUser: async () => {},
   getUserById: () => undefined,
   user: null,
   setUser: () => {},
@@ -56,6 +61,18 @@ const defaultAppContext: AppContextType = {
   currentView: 'dashboard',
   setCurrentView: () => {},
   loading: true,
+  storageService: null as any,
+  syncErrors: [],
+  syncMetrics: {
+    totalAttempts: 0,
+    successfulSyncs: 0,
+    failedSyncs: 0,
+    averageResponseTime: 0,
+    currentStreak: { type: 'success', count: 0 }
+  },
+  clearSyncErrors: () => {},
+  retryFailedSync: async () => {},
+  refreshData: async () => {}
 };
 
 const AppContext = createContext<AppContextType>(defaultAppContext);
@@ -69,124 +86,239 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [currentView, setCurrentView] = useState('dashboard');
   const [loading, setLoading] = useState(true);
+  const [syncErrors, setSyncErrors] = useState<SyncError[]>([]);
+  const [syncMetrics, setSyncMetrics] = useState<SyncMetrics>(defaultAppContext.syncMetrics);
+
+  // Enhanced storage configuration with persistence
   const [storageConfig, setStorageConfigState] = useState<StorageConfig>(() => {
     try {
       const saved = localStorage.getItem('storageConfig');
-      return saved ? JSON.parse(saved) : { type: 'local' };
-    } catch {
+      const config = saved ? JSON.parse(saved) : { type: 'local' };
+      
+      syncLogger.info(LogCategory.DATABASE, 'Loaded storage configuration', { config });
+      return config;
+    } catch (error) {
+      syncLogger.error(LogCategory.DATABASE, 'Failed to load storage configuration', { error });
       return { type: 'local' };
     }
+  });
+
+  // Initialize storage service
+  const [storageService] = useState(() => {
+    const service = new HybridStorageService(storageConfig);
+    
+    // Subscribe to error updates
+    const updateErrors = () => {
+      setSyncErrors(service.getSyncErrors());
+      setSyncMetrics(service.getSyncMetrics());
+    };
+
+    // Monitor for errors every 5 seconds
+    const errorInterval = setInterval(updateErrors, 5000);
+    
+    // Cleanup function stored in service
+    (service as any).cleanup = () => clearInterval(errorInterval);
+    
+    return service;
   });
 
   const toggleSidebar = () => {
     setSidebarOpen(prev => !prev);
   };
 
-  // Storage utilities
-  const saveToStorage = async (key: string, data: any) => {
-    if (storageConfig.type === 'local') {
-      localStorage.setItem(key, JSON.stringify(data));
-    } else if (storageConfig.type === 'supabase' && storageConfig.supabaseUrl && storageConfig.supabaseKey) {
-      // Implement Supabase save logic here
-      try {
-        // You would implement actual Supabase integration here
-        console.log('Would save to Supabase:', key, data);
-        // Fallback to localStorage for now
-        localStorage.setItem(key, JSON.stringify(data));
-      } catch (error) {
-        console.error('Failed to save to Supabase, using localStorage:', error);
-        localStorage.setItem(key, JSON.stringify(data));
-      }
+  // Enhanced project management with comprehensive error handling
+  const setProjects = async (newProjects: Project[]) => {
+    try {
+      setProjectsState(newProjects);
+      await storageService.saveProjects(newProjects);
+      
+      syncLogger.info(LogCategory.DATABASE, 'Projects updated successfully', {
+        count: newProjects.length
+      });
+    } catch (error) {
+      syncLogger.error(LogCategory.DATABASE, 'Failed to save projects', { 
+        error: error.message,
+        count: newProjects.length 
+      });
+      
+      // Still update local state even if sync fails
+      setProjectsState(newProjects);
+      throw error;
     }
   };
 
-  const loadFromStorage = async (key: string) => {
-    if (storageConfig.type === 'local') {
-      const stored = localStorage.getItem(key);
-      return stored ? JSON.parse(stored) : [];
-    } else if (storageConfig.type === 'supabase' && storageConfig.supabaseUrl && storageConfig.supabaseKey) {
-      // Implement Supabase load logic here
-      try {
-        // You would implement actual Supabase integration here
-        console.log('Would load from Supabase:', key);
-        // Fallback to localStorage for now
-        const stored = localStorage.getItem(key);
-        return stored ? JSON.parse(stored) : [];
-      } catch (error) {
-        console.error('Failed to load from Supabase, using localStorage:', error);
-        const stored = localStorage.getItem(key);
-        return stored ? JSON.parse(stored) : [];
-      }
+  const addProject = async (projectData: Omit<Project, 'id'>) => {
+    try {
+      syncLogger.info(LogCategory.DATABASE, 'Adding new project', { 
+        name: projectData.name 
+      });
+
+      const newProject = await storageService.addProject(projectData);
+      const updatedProjects = [...projects, newProject];
+      setProjectsState(updatedProjects);
+
+      syncLogger.info(LogCategory.DATABASE, 'Project added successfully', { 
+        id: newProject.id,
+        name: newProject.name 
+      });
+    } catch (error) {
+      syncLogger.error(LogCategory.DATABASE, 'Failed to add project', { 
+        error: error.message,
+        projectName: projectData.name 
+      });
+      throw error;
     }
-    return [];
   };
 
-  // Project management functions
-  const setProjects = (newProjects: Project[]) => {
-    setProjectsState(newProjects);
-    saveToStorage('projects', newProjects);
+  const updateProject = async (id: string, updates: Partial<Project>) => {
+    try {
+      syncLogger.info(LogCategory.DATABASE, 'Updating project', { 
+        id,
+        fields: Object.keys(updates) 
+      });
+
+      await storageService.updateProject(id, updates);
+      
+      const updatedProjects = projects.map(project =>
+        project.id === id ? { ...project, ...updates } : project
+      );
+      setProjectsState(updatedProjects);
+
+      syncLogger.info(LogCategory.DATABASE, 'Project updated successfully', { id });
+    } catch (error) {
+      syncLogger.error(LogCategory.DATABASE, 'Failed to update project', { 
+        error: error.message,
+        id 
+      });
+      throw error;
+    }
   };
 
-  const addProject = (projectData: Omit<Project, 'id'>) => {
-    const newProject: Project = {
-      ...projectData,
-      id: crypto.randomUUID()
-    };
-    const updatedProjects = [...projects, newProject];
-    setProjects(updatedProjects);
+  const deleteProject = async (id: string) => {
+    try {
+      const project = projects.find(p => p.id === id);
+      
+      syncLogger.info(LogCategory.DATABASE, 'Deleting project', { 
+        id,
+        name: project?.name 
+      });
+
+      await storageService.deleteProject(id);
+      
+      const updatedProjects = projects.filter(project => project.id !== id);
+      setProjectsState(updatedProjects);
+
+      syncLogger.info(LogCategory.DATABASE, 'Project deleted successfully', { id });
+    } catch (error) {
+      syncLogger.error(LogCategory.DATABASE, 'Failed to delete project', { 
+        error: error.message,
+        id 
+      });
+      throw error;
+    }
   };
 
-  const updateProject = (id: string, updates: Partial<Project>) => {
-    const updatedProjects = projects.map(project =>
-      project.id === id ? { ...project, ...updates } : project
-    );
-    setProjects(updatedProjects);
+  // Enhanced user management with error handling
+  const setUsers = async (newUsers: EnhancedUser[]) => {
+    try {
+      setUsersState(newUsers);
+      await storageService.saveUsers(newUsers);
+      
+      syncLogger.info(LogCategory.DATABASE, 'Users updated successfully', {
+        count: newUsers.length
+      });
+    } catch (error) {
+      syncLogger.error(LogCategory.DATABASE, 'Failed to save users', { 
+        error: error.message,
+        count: newUsers.length 
+      });
+      
+      setUsersState(newUsers);
+      throw error;
+    }
   };
 
-  const deleteProject = (id: string) => {
-    const updatedProjects = projects.filter(project => project.id !== id);
-    setProjects(updatedProjects);
+  const addUser = async (userData: Omit<EnhancedUser, 'id'>) => {
+    try {
+      syncLogger.info(LogCategory.DATABASE, 'Adding new user', { 
+        email: userData.email 
+      });
+
+      const newUser = await storageService.addUser(userData);
+      const updatedUsers = [...users, newUser];
+      setUsersState(updatedUsers);
+
+      syncLogger.info(LogCategory.DATABASE, 'User added successfully', { 
+        id: newUser.id,
+        email: newUser.email 
+      });
+    } catch (error) {
+      syncLogger.error(LogCategory.DATABASE, 'Failed to add user', { 
+        error: error.message,
+        email: userData.email 
+      });
+      throw error;
+    }
   };
 
-  // User management functions
-  const setUsers = (newUsers: EnhancedUser[]) => {
-    setUsersState(newUsers);
-    saveToStorage('users', newUsers);
+  const updateUser = async (id: string, updates: Partial<EnhancedUser>) => {
+    try {
+      syncLogger.info(LogCategory.DATABASE, 'Updating user', { 
+        id,
+        fields: Object.keys(updates) 
+      });
+
+      await storageService.updateUser(id, updates);
+      
+      const updatedUsers = users.map(user =>
+        user.id === id ? { 
+          ...user, 
+          ...updates, 
+          lastActive: new Date().toISOString() 
+        } : user
+      );
+      setUsersState(updatedUsers);
+
+      syncLogger.info(LogCategory.DATABASE, 'User updated successfully', { id });
+    } catch (error) {
+      syncLogger.error(LogCategory.DATABASE, 'Failed to update user', { 
+        error: error.message,
+        id 
+      });
+      throw error;
+    }
   };
 
-  const addUser = (userData: Omit<EnhancedUser, 'id'>) => {
-    const newUser: EnhancedUser = {
-      ...userData,
-      id: crypto.randomUUID(),
-      joinedDate: userData.joinedDate || new Date().toISOString(),
-      lastActive: new Date().toISOString()
-    };
-    const updatedUsers = [...users, newUser];
-    setUsers(updatedUsers);
-  };
+  const deleteUser = async (id: string) => {
+    try {
+      const userToDelete = users.find(u => u.id === id);
+      
+      syncLogger.info(LogCategory.DATABASE, 'Deleting user', { 
+        id,
+        email: userToDelete?.email 
+      });
 
-  const updateUser = (id: string, updates: Partial<EnhancedUser>) => {
-    const updatedUsers = users.map(user =>
-      user.id === id ? { 
-        ...user, 
-        ...updates, 
-        lastActive: new Date().toISOString() 
-      } : user
-    );
-    setUsers(updatedUsers);
-  };
+      await storageService.deleteUser(id);
+      
+      const updatedUsers = users.filter(user => user.id !== id);
+      setUsersState(updatedUsers);
+      
+      // Also remove user from all project teams
+      const updatedProjects = projects.map(project => ({
+        ...project,
+        teamMembers: project.teamMembers?.filter(tm => tm.userId !== id) || [],
+        projectManager: project.projectManager === id ? undefined : project.projectManager
+      }));
+      setProjectsState(updatedProjects);
 
-  const deleteUser = (id: string) => {
-    const updatedUsers = users.filter(user => user.id !== id);
-    setUsers(updatedUsers);
-    
-    // Also remove user from all project teams
-    const updatedProjects = projects.map(project => ({
-      ...project,
-      teamMembers: project.teamMembers?.filter(tm => tm.userId !== id) || [],
-      projectManager: project.projectManager === id ? undefined : project.projectManager
-    }));
-    setProjects(updatedProjects);
+      syncLogger.info(LogCategory.DATABASE, 'User deleted successfully', { id });
+    } catch (error) {
+      syncLogger.error(LogCategory.DATABASE, 'Failed to delete user', { 
+        error: error.message,
+        id 
+      });
+      throw error;
+    }
   };
 
   const getUserById = (id: string): EnhancedUser | undefined => {
@@ -194,20 +326,94 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const setStorageConfig = (config: StorageConfig) => {
-    setStorageConfigState(config);
-    localStorage.setItem('storageConfig', JSON.stringify(config));
+    try {
+      syncLogger.info(LogCategory.DATABASE, 'Updating storage configuration', { 
+        from: storageConfig.type,
+        to: config.type 
+      });
+
+      setStorageConfigState(config);
+      localStorage.setItem('storageConfig', JSON.stringify(config));
+      storageService.updateConfig(config);
+    } catch (error) {
+      syncLogger.error(LogCategory.DATABASE, 'Failed to update storage configuration', { 
+        error: error.message,
+        config 
+      });
+      throw error;
+    }
   };
 
-  // Initialize app and load data
+  // NEW: Enhanced error management
+  const clearSyncErrors = (errorIds?: string[]) => {
+    storageService.clearSyncErrors(errorIds);
+    setSyncErrors(storageService.getSyncErrors());
+    
+    syncLogger.info(LogCategory.SYNC, 'Sync errors cleared', { 
+      errorIds: errorIds?.length || 'all' 
+    });
+  };
+
+  const retryFailedSync = async (errorId: string) => {
+    try {
+      syncLogger.info(LogCategory.SYNC, 'Retrying failed sync', { errorId });
+      
+      await storageService.retryFailedSync(errorId);
+      
+      // Refresh error state
+      setSyncErrors(storageService.getSyncErrors());
+      setSyncMetrics(storageService.getSyncMetrics());
+      
+      syncLogger.info(LogCategory.SYNC, 'Sync retry completed successfully', { errorId });
+    } catch (error) {
+      syncLogger.error(LogCategory.SYNC, 'Sync retry failed', { 
+        error: error.message,
+        errorId 
+      });
+      throw error;
+    }
+  };
+
+  const refreshData = async () => {
+    try {
+      setLoading(true);
+      
+      syncLogger.info(LogCategory.DATABASE, 'Refreshing data from storage');
+
+      const [freshProjects, freshUsers] = await Promise.all([
+        storageService.getProjects(),
+        storageService.getUsers()
+      ]);
+      
+      setProjectsState(freshProjects);
+      setUsersState(freshUsers);
+      
+      syncLogger.info(LogCategory.DATABASE, 'Data refresh completed', {
+        projects: freshProjects.length,
+        users: freshUsers.length
+      });
+    } catch (error) {
+      syncLogger.error(LogCategory.DATABASE, 'Failed to refresh data', { 
+        error: error.message 
+      });
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Initialize app and load data with enhanced error handling
   useEffect(() => {
     const initializeApp = async () => {
       try {
         setLoading(true);
         
-        // Load projects and users from storage
+        syncLogger.info(LogCategory.DATABASE, 'Initializing application');
+        
+        // Load projects and users from storage service
         const [storedProjects, storedUsers] = await Promise.all([
-          loadFromStorage('projects'),
-          loadFromStorage('users')
+          storageService.getProjects(),
+          storageService.getUsers()
         ]);
         
         setProjectsState(storedProjects || []);
@@ -216,25 +422,57 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         // Load current user from storage if exists
         const currentUser = localStorage.getItem('currentUser');
         if (currentUser) {
-          setUser(JSON.parse(currentUser));
+          const parsedUser = JSON.parse(currentUser);
+          setUser(parsedUser);
+          
+          syncLogger.info(LogCategory.AUTH, 'Current user loaded', { 
+            userId: parsedUser.id,
+            email: parsedUser.email 
+          });
         }
         
+        syncLogger.info(LogCategory.DATABASE, 'Application initialized successfully', {
+          projects: storedProjects?.length || 0,
+          users: storedUsers?.length || 0,
+          hasCurrentUser: !!currentUser
+        });
+        
       } catch (error) {
-        console.error('Failed to initialize app:', error);
+        syncLogger.error(LogCategory.DATABASE, 'Failed to initialize application', { 
+          error: error.message 
+        });
+        
+        // Set empty arrays as fallback
+        setProjectsState([]);
+        setUsersState([]);
       } finally {
         setLoading(false);
       }
     };
 
     initializeApp();
-  }, [storageConfig]);
+
+    // Cleanup function
+    return () => {
+      if ((storageService as any).cleanup) {
+        (storageService as any).cleanup();
+      }
+      storageService.dispose();
+    };
+  }, [storageService]);
 
   // Save current user to localStorage when it changes
   useEffect(() => {
     if (user) {
       localStorage.setItem('currentUser', JSON.stringify(user));
+      
+      syncLogger.info(LogCategory.AUTH, 'Current user updated', { 
+        userId: user.id,
+        email: user.email 
+      });
     } else {
       localStorage.removeItem('currentUser');
+      syncLogger.info(LogCategory.AUTH, 'Current user cleared');
     }
   }, [user]);
 
@@ -259,6 +497,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     currentView,
     setCurrentView,
     loading,
+    storageService,
+    syncErrors,
+    syncMetrics,
+    clearSyncErrors,
+    retryFailedSync,
+    refreshData,
   };
 
   return (

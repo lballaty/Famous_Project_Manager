@@ -1,9 +1,10 @@
-// src/lib/supabase.ts - Supabase client and utilities
+// src/lib/supabase.ts - Enhanced with lock management and better error handling
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { Project, Task, Milestone } from '../types/project';
 import { User, TeamMember } from '../types/user';
+import { ProjectLock } from '../types/sync';
 
-// Database types that match your Supabase schema
+// Enhanced Database types that match your Supabase schema
 export interface Database {
   public: {
     Tables: {
@@ -126,17 +127,69 @@ export interface Database {
           dependencies?: string[] | null;
         };
       };
-      // Add other table types as needed...
+      // NEW: Add project_locks table
+      project_locks: {
+        Row: {
+          id: string;
+          project_id: string;
+          locked_by_user_id: string;
+          locked_by_email: string;
+          locked_by_name: string;
+          locked_at: string;
+          expires_at: string;
+          lock_reason: string | null;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          project_id: string;
+          locked_by_user_id: string;
+          locked_by_email: string;
+          locked_by_name: string;
+          locked_at?: string;
+          expires_at: string;
+          lock_reason?: string | null;
+          is_active?: boolean;
+        };
+        Update: {
+          id?: string;
+          project_id?: string;
+          locked_by_user_id?: string;
+          locked_by_email?: string;
+          locked_by_name?: string;
+          locked_at?: string;
+          expires_at?: string;
+          lock_reason?: string | null;
+          is_active?: boolean;
+        };
+      };
+      // Add other tables as needed (tasks, team_members, milestones)...
+    };
+    Functions: {
+      cleanup_expired_locks: {
+        Args: Record<PropertyKey, never>;
+        Returns: void;
+      };
+      extend_project_lock: {
+        Args: {
+          p_project_id: string;
+          p_user_id: string;
+          p_additional_minutes?: number;
+        };
+        Returns: boolean;
+      };
     };
   };
 }
 
-// Create Supabase client
+// Create Supabase client (keep your existing function)
 export const createSupabaseClient = (url: string, key: string): SupabaseClient<Database> => {
   return createClient<Database>(url, key);
 };
 
-// Supabase service class
+// Enhanced Supabase service class
 export class SupabaseService {
   private supabase: SupabaseClient<Database>;
 
@@ -144,7 +197,7 @@ export class SupabaseService {
     this.supabase = createSupabaseClient(url, key);
   }
 
-  // USER OPERATIONS
+  // Keep all your existing USER OPERATIONS exactly as they are
   async getUsers(): Promise<User[]> {
     const { data, error } = await this.supabase
       .from('users')
@@ -194,7 +247,7 @@ export class SupabaseService {
     if (error) throw error;
   }
 
-  // PROJECT OPERATIONS
+  // Keep all your existing PROJECT OPERATIONS exactly as they are
   async getProjects(): Promise<Project[]> {
     const { data: projects, error: projectsError } = await this.supabase
       .from('projects')
@@ -265,7 +318,88 @@ export class SupabaseService {
     return this.transformProjectFromDB(data);
   }
 
-  // TRANSFORMATION METHODS
+  // NEW: PROJECT LOCK OPERATIONS
+  async getProjectLocks(): Promise<ProjectLock[]> {
+    const { data, error } = await this.supabase
+      .from('project_locks')
+      .select('*')
+      .eq('is_active', true)
+      .gt('expires_at', new Date().toISOString())
+      .order('locked_at', { ascending: false });
+      
+    if (error) throw error;
+    
+    return data.map(this.transformLockFromDB);
+  }
+
+  async createProjectLock(lock: Omit<ProjectLock, 'id' | 'created_at' | 'updated_at'>): Promise<ProjectLock> {
+    const { data, error } = await this.supabase
+      .from('project_locks')
+      .insert({
+        project_id: lock.project_id,
+        locked_by_user_id: lock.locked_by_user_id,
+        locked_by_email: lock.locked_by_email,
+        locked_by_name: lock.locked_by_name,
+        expires_at: lock.expires_at,
+        lock_reason: lock.lock_reason,
+        is_active: lock.is_active
+      })
+      .select()
+      .single();
+      
+    if (error) throw error;
+    
+    return this.transformLockFromDB(data);
+  }
+
+  async updateProjectLock(lockId: string, updates: Partial<ProjectLock>): Promise<ProjectLock> {
+    const { data, error } = await this.supabase
+      .from('project_locks')
+      .update({
+        expires_at: updates.expires_at,
+        lock_reason: updates.lock_reason,
+        is_active: updates.is_active
+      })
+      .eq('id', lockId)
+      .select()
+      .single();
+      
+    if (error) throw error;
+    
+    return this.transformLockFromDB(data);
+  }
+
+  async unlockProject(projectId: string, userId: string): Promise<void> {
+    const { error } = await this.supabase
+      .from('project_locks')
+      .update({ 
+        is_active: false,
+        updated_at: new Date().toISOString()
+      })
+      .eq('project_id', projectId)
+      .eq('locked_by_user_id', userId)
+      .eq('is_active', true);
+
+    if (error) throw error;
+  }
+
+  async extendProjectLock(projectId: string, userId: string, additionalMinutes: number = 60): Promise<boolean> {
+    const { data, error } = await this.supabase.rpc('extend_project_lock', {
+      p_project_id: projectId,
+      p_user_id: userId,
+      p_additional_minutes: additionalMinutes
+    });
+
+    if (error) throw error;
+    return data;
+  }
+
+  async cleanupExpiredLocks(): Promise<void> {
+    const { error } = await this.supabase.rpc('cleanup_expired_locks');
+    if (error) throw error;
+  }
+
+  // Keep all your existing TRANSFORMATION METHODS exactly as they are
   private transformUserFromDB(dbUser: any): User {
     return {
       id: dbUser.id,
@@ -383,5 +517,20 @@ export class SupabaseService {
     if (project.dependencies !== undefined) dbProject.dependencies = project.dependencies;
     
     return dbProject;
+  }
+
+  // NEW: Transform lock data
+  private transformLockFromDB(dbLock: any): ProjectLock {
+    return {
+      id: dbLock.id,
+      project_id: dbLock.project_id,
+      locked_by_user_id: dbLock.locked_by_user_id,
+      locked_by_email: dbLock.locked_by_email,
+      locked_by_name: dbLock.locked_by_name,
+      locked_at: dbLock.locked_at,
+      expires_at: dbLock.expires_at,
+      lock_reason: dbLock.lock_reason,
+      is_active: dbLock.is_active
+    };
   }
 }
