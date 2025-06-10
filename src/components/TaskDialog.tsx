@@ -154,12 +154,13 @@ export function TaskDialog({ open, onOpenChange, task, projects, allTasks, onSav
 
             <div>
               <Label>Milestone</Label>
-              <Select value={formData.milestoneId || ''} onValueChange={(value) => setFormData({ ...formData, milestoneId: value || undefined })}>
+              <Select value={formData.milestoneId || 'None'} onValueChange={(value) => setFormData({ ...formData, milestoneId: value || undefined })}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select milestone" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">No milestone</SelectItem>
+                  <SelectItem value="None">No milestone</SelectItem>
+                  
                   {milestones.map(milestone => (
                     <SelectItem key={milestone.id} value={milestone.id}>{milestone.title}</SelectItem>
                   ))}
