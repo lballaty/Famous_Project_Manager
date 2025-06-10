@@ -213,12 +213,13 @@ export function Timeline({ projects }: TimelineProps) {
         </CardContent>
       </Card>
 
-      <MilestoneDialog
-        open={milestoneDialogOpen}
-        onOpenChange={setMilestoneDialogOpen}
-        milestone={editingMilestone?.milestone}
-        onSave={handleSaveMilestone}
-      />
+    <MilestoneDialog
+      open={milestoneDialogOpen}
+      onOpenChange={setMilestoneDialogOpen}
+      milestone={editingMilestone?.milestone}
+      projectId={editingMilestone?.projectId || selectedProjectId}
+      onSave={handleSaveMilestone}
+    />
     </div>
   );
 }
