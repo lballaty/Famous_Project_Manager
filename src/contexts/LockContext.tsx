@@ -1,7 +1,7 @@
 // src/contexts/LockContext.tsx - Project lock management context
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { ProjectLock, LogCategory } from '../types/sync';
-import { supabase } from '../lib/supabase';
+import { createSupabaseClient } from '../lib/supabase';
 import { useAppContext } from './AppContext';
 import { syncLogger } from '../utils/logger';
 import { useToast } from '../hooks/use-toast';

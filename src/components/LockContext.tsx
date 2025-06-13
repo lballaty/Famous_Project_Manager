@@ -1,7 +1,7 @@
-// src/contexts/LockContext.tsx - Project lock management context
+// src/contexts/LockContext.tsx - Fixed Supabase import
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { ProjectLock, LogCategory } from '../types/sync';
-import { supabase } from '../lib/supabase';
+import { createSupabaseClient } from '../lib/supabase'; // FIXED: Use createSupabaseClient
 import { useAppContext } from './AppContext';
 import { syncLogger } from '../utils/logger';
 import { useToast } from '../hooks/use-toast';
@@ -34,8 +34,16 @@ export const useLock = () => {
 export const LockProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [locks, setLocks] = useState<ProjectLock[]>([]);
   const [isLocking, setIsLocking] = useState(false);
-  const { user } = useAppContext();
+  const { user, storageConfig } = useAppContext(); // Get storageConfig from context
   const { toast } = useToast();
+
+  // FIXED: Create supabase client from config
+  const getSupabaseClient = () => {
+    if (storageConfig.type === 'supabase' && storageConfig.supabaseUrl && storageConfig.supabaseKey) {
+      return createSupabaseClient(storageConfig.supabaseUrl, storageConfig.supabaseKey);
+    }
+    return null;
+  };
 
   // Check for active locks on mount and periodically
   useEffect(() => {
@@ -50,6 +58,9 @@ export const LockProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []);
 
   const refreshLocks = async () => {
+    const supabase = getSupabaseClient();
+    if (!supabase) return; // No Supabase configured
+    
     try {
       syncLogger.debug(LogCategory.DATABASE, 'Refreshing project locks');
       
@@ -75,6 +86,9 @@ export const LockProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const cleanupExpiredLocks = async () => {
+    const supabase = getSupabaseClient();
+    if (!supabase) return;
+    
     try {
       const { error } = await supabase.rpc('cleanup_expired_locks');
       
@@ -96,8 +110,9 @@ export const LockProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     reason = 'Working offline', 
     duration = 4 * 60 * 60 * 1000 // 4 hours default
   ): Promise<boolean> => {
-    if (!user) {
-      syncLogger.error(LogCategory.AUTH, 'Cannot lock project - no user authenticated');
+    const supabase = getSupabaseClient();
+    if (!user || !supabase) {
+      syncLogger.error(LogCategory.AUTH, 'Cannot lock project - no user authenticated or Supabase not configured');
       return false;
     }
 
@@ -218,7 +233,8 @@ export const LockProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const unlockProject = async (projectId: string): Promise<boolean> => {
-    if (!user) return false;
+    const supabase = getSupabaseClient();
+    if (!user || !supabase) return false;
 
     try {
       syncLogger.info(LogCategory.DATABASE, 'Attempting to unlock project', {
@@ -269,7 +285,8 @@ export const LockProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const adminUnlockProject = async (projectId: string): Promise<boolean> => {
-    if (!user) return false;
+    const supabase = getSupabaseClient();
+    if (!user || !supabase) return false;
 
     try {
       syncLogger.info(LogCategory.DATABASE, 'Admin attempting to unlock project', {
@@ -320,7 +337,8 @@ export const LockProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const extendLock = async (projectId: string, additionalMinutes = 60): Promise<boolean> => {
-    if (!user) return false;
+    const supabase = getSupabaseClient();
+    if (!user || !supabase) return false;
 
     try {
       syncLogger.info(LogCategory.DATABASE, 'Attempting to extend project lock', {

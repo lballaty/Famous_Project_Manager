@@ -1,5 +1,7 @@
 // src/components/MainApp.tsx - Updated with enhanced settings
 // Updated MainApp.tsx with mobile responsiveness
+import { EnhancedSettings } from './EnhancedSettings';
+import { useToast } from '../hooks/use-toast';
 import React, { useState } from 'react';
 import { useAppContext } from '../contexts/AppContext';
 import { Dashboard } from './Dashboard';
@@ -27,30 +29,31 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
-import { 
-  BarChart3, 
-  List, 
-  Calendar, 
-  Link, 
-  Settings, 
-  FolderOpen, 
-  LogOut, 
-  GitBranch, 
+import {
+  BarChart3,
+  List,
+  Calendar,
+  Link,
+  Settings,
+  FolderOpen,
+  GitBranch,
   Menu,
-  MoreVertical
+  MoreVertical,
+  FileSpreadsheet,
+  FileJson,
+  LogOut,
+  Database,
+  RotateCw,
+  Filter,
+  Lock,
+  FileText,
+  AlertTriangle,
 } from 'lucide-react';
 
 // NEW IMPORTS - Add enhanced settings components
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { 
-  Database,
-  Sync,
-  Filter,
-  Lock,
-  FileText,
-  AlertTriangle
-} from 'lucide-react';
+
 import { SyncStatus } from './SyncStatus';
 import { ErrorDashboard } from './ErrorDashboard';
 import { LoggingControls } from './LoggingControls';
@@ -59,6 +62,8 @@ import { ActiveLocksPanel } from './ProjectLockComponents';
 
 import { useRoles } from '../hooks/useRoles';
 import { Task, Project } from '../types/project';
+
+
 
 export function MainApp() {
   const { 
@@ -80,6 +85,71 @@ export function MainApp() {
   const { canEdit, canDelete } = useRoles();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const { toast } = useToast();
+
+  // CSV Export function
+const handleExportCSV = () => {
+  const allTasks: (Task & { projectName: string; assigneeName: string })[] = [];
+  
+  projects.forEach(project => {
+    project.tasks.forEach(task => {
+      const assignee = users.find(u => u.id === task.assigneeId);
+      allTasks.push({
+        ...task,
+        projectName: project.name,
+        assigneeName: assignee ? assignee.name : 'Unassigned'
+      });
+    });
+  });
+
+  const headers = ['Project', 'Task Title', 'Description', 'Status', 'Priority', 'Assignee', 'Due Date', 'Estimated Hours', 'Tags'];
+  const csvContent = [
+    headers.join(','),
+    ...allTasks.map(task => [
+      task.projectName,
+      `"${task.title}"`,
+      `"${task.description}"`,
+      task.status,
+      task.priority,
+      task.assigneeName,
+      task.dueDate,
+      task.estimatedHours || '',
+      `"${(task.tags || []).join('; ')}"`
+    ].join(','))
+  ].join('\n');
+
+  const blob = new Blob([csvContent], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'project-tasks.csv';
+  link.click();
+  URL.revokeObjectURL(url);
+  toast({
+    title: 'Export Successful',
+    description: 'Project tasks exported as CSV file.',
+    //variant: 'success'
+  });
+};
+
+// JSON Export function
+const handleExportJSON = () => {
+  const data = { projects, users };
+  const jsonContent = JSON.stringify(data, null, 2);
+  const blob = new Blob([jsonContent], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'project-data.json';
+  link.click();
+  URL.revokeObjectURL(url);
+  toast({
+    title: 'Export Successful',
+    description: 'Project data exported as JSON file.',
+    //variant: 'success'
+  });
+};
 
   if (loading) {
     return (
@@ -163,124 +233,7 @@ export function MainApp() {
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
-  // NEW: Enhanced Settings Component
-  const EnhancedSettings = () => {
-    const [settingsTab, setSettingsTab] = useState('storage');
-
-    return (
-      <div className="space-y-6">
-        <div className="mb-6">
-          <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
-            <Settings className="h-6 w-6 md:h-8 w-8" />
-            Settings
-          </h1>
-          <p className="text-muted-foreground mt-2">
-            Manage your application preferences, storage, and sync settings
-          </p>
-        </div>
-
-        <Tabs value={settingsTab} onValueChange={setSettingsTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 md:grid-cols-6">
-            <TabsTrigger value="storage" className="flex items-center gap-1 md:gap-2">
-              <Database className="h-3 w-3 md:h-4 w-4" />
-              <span className="text-xs md:text-sm">Storage</span>
-            </TabsTrigger>
-            <TabsTrigger value="sync" className="flex items-center gap-1 md:gap-2">
-              <Sync className="h-3 w-3 md:h-4 w-4" />
-              <span className="text-xs md:text-sm">Sync</span>
-            </TabsTrigger>
-            <TabsTrigger value="selective" className="flex items-center gap-1 md:gap-2">
-              <Filter className="h-3 w-3 md:h-4 w-4" />
-              <span className="text-xs md:text-sm">Selective</span>
-            </TabsTrigger>
-            <TabsTrigger value="locks" className="flex items-center gap-1 md:gap-2">
-              <Lock className="h-3 w-3 md:h-4 w-4" />
-              <span className="text-xs md:text-sm">Locks</span>
-            </TabsTrigger>
-            <TabsTrigger value="logging" className="flex items-center gap-1 md:gap-2">
-              <FileText className="h-3 w-3 md:h-4 w-4" />
-              <span className="text-xs md:text-sm">Logging</span>
-            </TabsTrigger>
-            <TabsTrigger value="errors" className="flex items-center gap-1 md:gap-2 relative">
-              <AlertTriangle className="h-3 w-3 md:h-4 w-4" />
-              <span className="text-xs md:text-sm">Errors</span>
-              {syncErrors.length > 0 && (
-                <Badge variant="destructive" className="absolute -top-1 -right-1 h-4 w-4 rounded-full p-0 text-xs">
-                  {syncErrors.length}
-                </Badge>
-              )}
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="storage">
-            <StorageSettings 
-              config={storageConfig} 
-              onConfigChange={setStorageConfig} 
-            />
-          </TabsContent>
-
-          <TabsContent value="sync">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Sync className="h-5 w-5" />
-                  Synchronization Status
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <SyncStatus storageService={storageService} />
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="selective">
-            <SelectiveSyncInterface />
-          </TabsContent>
-
-          <TabsContent value="locks">
-            <div className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Lock className="h-5 w-5" />
-                    Project Lock Management
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-muted-foreground mb-4">
-                    Lock projects to prevent editing conflicts when working offline or making major changes.
-                  </p>
-                </CardContent>
-              </Card>
-              
-              <ActiveLocksPanel />
-              
-              <Card>
-                <CardContent className="p-6">
-                  <div className="text-sm text-muted-foreground space-y-2">
-                    <div><strong>How Project Locks Work:</strong></div>
-                    <div>• Lock a project before working offline to prevent conflicts</div>
-                    <div>• Other users can't edit locked projects</div>
-                    <div>• Locks automatically expire after the set duration</div>
-                    <div>• Admins can force unlock if needed</div>
-                    <div>• You can extend or remove your own locks anytime</div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="logging">
-            <LoggingControls />
-          </TabsContent>
-
-          <TabsContent value="errors">
-            <ErrorDashboard />
-          </TabsContent>
-        </Tabs>
-      </div>
-    );
-  };
+ 
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -343,38 +296,39 @@ export function MainApp() {
           </div>
 
           {/* Mobile header actions - only shows on mobile */}
-          <div className="md:hidden">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm">
-                  <MoreVertical className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <div className="px-2 py-1.5 text-sm font-medium">
-                  Welcome, {user?.name}
-                </div>
-                <DropdownMenuSeparator />
-                
-                <DropdownMenuItem className="p-0">
-                  <ExportImport 
-                    projects={projects} 
-                    users={users}
-                    onImport={handleImport}
-                    onImportUsers={setUsers}
-                  />
-                </DropdownMenuItem>
-                
-                <DropdownMenuSeparator />
-                
-                <DropdownMenuItem onClick={handleLogout}>
-                  <LogOut className="h-4 w-4 mr-2" />
-                  Logout
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
+<div className="md:hidden">
+  <DropdownMenu>
+    <DropdownMenuTrigger asChild>
+      <Button variant="outline" size="sm">
+        <MoreVertical className="h-4 w-4" />
+      </Button>
+    </DropdownMenuTrigger>
+    <DropdownMenuContent align="end" className="w-56">
+      <div className="px-2 py-1.5 text-sm font-medium">
+        Welcome, {user?.name}
+      </div>
+      <DropdownMenuSeparator />
+      
+      {/* Individual export menu items */}
+      <DropdownMenuItem onClick={handleExportCSV}>
+        <FileSpreadsheet className="h-4 w-4 mr-2" />
+        Export CSV
+      </DropdownMenuItem>
+      
+      <DropdownMenuItem onClick={handleExportJSON}>
+        <FileJson className="h-4 w-4 mr-2" />
+        Export JSON
+      </DropdownMenuItem>
+      
+      <DropdownMenuSeparator />
+      
+      <DropdownMenuItem onClick={handleLogout}>
+        <LogOut className="h-4 w-4 mr-2" />
+        Logout
+      </DropdownMenuItem>
+    </DropdownMenuContent>
+  </DropdownMenu>
+</div>
 
         {/* Desktop navigation tabs - hidden on mobile */}
         <div className="hidden md:block">
@@ -410,7 +364,15 @@ export function MainApp() {
           {activeTab === 'dependencies' && <DependencyTracker projects={projects} />}
           {activeTab === 'graph' && <DependencyGraph projects={projects} />}
           {/* UPDATED: Use enhanced settings instead of simple StorageSettings */}
-          {activeTab === 'settings' && <EnhancedSettings />}
+          {activeTab === 'settings' && (
+  <EnhancedSettings
+    storageConfig={storageConfig}
+    setStorageConfig={setStorageConfig}
+    storageService={storageService}
+    syncErrors={syncErrors}
+  />
+)}
+
         </div>
       </div>
     </div>

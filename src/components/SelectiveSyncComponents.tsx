@@ -1,4 +1,4 @@
-// src/components/SelectiveSyncComponents.tsx - Selective sync UI components
+// src/components/SelectiveSyncComponents.tsx - Fixed complete file
 import React, { useState, useMemo } from 'react';
 import { useAppContext } from '../contexts/AppContext';
 import { Project, Task } from '../types/project';
@@ -287,215 +287,6 @@ export const ProjectSyncSelector: React.FC<ProjectSyncSelectorProps> = ({
                 className="flex items-center gap-2"
               >
                 <Download className="h-3 w-3" />
-                Download Tasks
-              </Button>
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-};
-
-// Combined Selective Sync Interface
-export const SelectiveSyncInterface: React.FC = () => {
-  const { projects, storageService } = useAppContext();
-  const [selectedProject, setSelectedProject] = useState<string>('');
-
-  const handleProjectSync = async (projectIds: string[], direction: 'upload' | 'download') => {
-    if (direction === 'upload') {
-      // Upload selected projects to cloud
-      const selectedProjects = projects.filter(p => projectIds.includes(p.id));
-      await storageService.saveProjects(selectedProjects);
-    } else {
-      // Download selected projects from cloud
-      await storageService.forceSyncFromSupabase();
-    }
-  };
-
-  const handleTaskSync = async (taskIds: string[], direction: 'upload' | 'download') => {
-    // Implementation would depend on your task storage structure
-    // This is a simplified version
-    if (direction === 'upload') {
-      // Upload selected tasks
-      const allTasks = projects.flatMap(p => p.tasks || []);
-      const selectedTasks = allTasks.filter(t => taskIds.includes(t.id));
-      // Would need specific task sync logic here
-    } else {
-      // Download selected tasks
-      await storageService.forceSyncFromSupabase();
-    }
-  };
-
-  const getProjectTasks = (projectId: string) => {
-    const project = projects.find(p => p.id === projectId);
-    return project?.tasks || [];
-  };
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold mb-2">Selective Sync</h2>
-        <p className="text-muted-foreground">
-          Choose specific projects and tasks to sync for offline work or to update with latest changes.
-        </p>
-      </div>
-
-      <Tabs defaultValue="projects" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="projects">Project Sync</TabsTrigger>
-          <TabsTrigger value="tasks">Task Sync</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="projects">
-          <ProjectSyncSelector
-            projects={projects}
-            onSelectiveSync={handleProjectSync}
-          />
-        </TabsContent>
-
-        <TabsContent value="tasks">
-          <div className="space-y-4">
-            <div>
-              <Label>Select Project</Label>
-              <Select value={selectedProject} onValueChange={setSelectedProject}>
-                <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="Choose a project to sync tasks" />
-                </SelectTrigger>
-                <SelectContent>
-                  {projects.map(project => (
-                    <SelectItem key={project.id} value={project.id}>
-                      {project.name} ({project.tasks?.length || 0} tasks)
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {selectedProject && (
-              <TaskSyncSelector
-                projectId={selectedProject}
-                tasks={getProjectTasks(selectedProject)}
-                onSelectiveSync={handleTaskSync}
-              />
-            )}
-          </div>
-        </TabsContent>
-      </Tabs>
-    </div>
-  );
-};
-
-// Offline Preparation Component
-export const OfflinePreparation: React.FC = () => {
-  const { projects, storageService } = useAppContext();
-  const [isPreparingOffline, setIsPreparingOffline] = useState(false);
-  const [selectedProjects, setSelectedProjects] = useState<Set<string>>(new Set());
-  const { toast } = useToast();
-
-  const handlePrepareOffline = async () => {
-    if (selectedProjects.size === 0) {
-      toast({
-        title: "No Projects Selected",
-        description: "Please select projects to prepare for offline work",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    setIsPreparingOffline(true);
-    try {
-      // Download selected projects and their dependencies
-      const projectList = Array.from(selectedProjects);
-      await storageService.forceSyncFromSupabase();
-      
-      // Additional offline preparation logic could go here
-      // - Prefetch related data
-      // - Optimize local storage
-      // - Setup conflict resolution
-      
-      toast({
-        title: "Offline Preparation Complete",
-        description: `${selectedProjects.size} projects are ready for offline work`
-      });
-      
-      setSelectedProjects(new Set());
-    } catch (error) {
-      toast({
-        title: "Preparation Failed",
-        description: error instanceof Error ? error.message : "Failed to prepare for offline work",
-        variant: "destructive"
-      });
-    } finally {
-      setIsPreparingOffline(false);
-    }
-  };
-
-  const getProjectSummary = () => {
-    const selectedProjectsList = projects.filter(p => selectedProjects.has(p.id));
-    const totalTasks = selectedProjectsList.reduce((sum, p) => sum + (p.tasks?.length || 0), 0);
-    const totalMembers = new Set(selectedProjectsList.flatMap(p => p.teamMembers?.map(tm => tm.userId) || [])).size;
-    
-    return { totalTasks, totalMembers };
-  };
-
-  const { totalTasks, totalMembers } = getProjectSummary();
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Download className="h-5 w-5" />
-          Prepare for Offline Work
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="text-sm text-muted-foreground">
-          Select projects to download and prepare for offline editing. This will ensure you have
-          the latest data and can work seamlessly without an internet connection.
-        </div>
-
-        <ProjectSyncSelector
-          projects={projects}
-          onSelectiveSync={async (projectIds) => {
-            setSelectedProjects(new Set(projectIds));
-          }}
-        />
-
-        {selectedProjects.size > 0 && (
-          <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="font-medium text-blue-900">
-                  Ready to prepare {selectedProjects.size} projects for offline work
-                </div>
-                <div className="text-sm text-blue-700">
-                  Includes {totalTasks} tasks and {totalMembers} team members
-                </div>
-              </div>
-              <Button
-                onClick={handlePrepareOffline}
-                disabled={isPreparingOffline}
-                className="flex items-center gap-2"
-              >
-                <Download className="h-4 w-4" />
-                {isPreparingOffline ? 'Preparing...' : 'Prepare Offline'}
-              </Button>
-            </div>
-          </div>
-        )}
-
-        <div className="text-xs text-muted-foreground space-y-1">
-          <div><strong>What this does:</strong></div>
-          <div>• Downloads latest project data and tasks</div>
-          <div>• Syncs team member information</div>
-          <div>• Prepares conflict resolution for when you're back online</div>
-          <div>• Optimizes local storage for offline performance</div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-};3 w-3" />
                 {isLoading ? 'Downloading...' : 'Download from Cloud'}
               </Button>
             </div>
@@ -791,4 +582,213 @@ export const TaskSyncSelector: React.FC<TaskSyncSelectorProps> = ({
                 disabled={isLoading}
                 className="flex items-center gap-2"
               >
-                <Download className="h-
+                <Download className="h-3 w-3" />
+                Download Tasks
+              </Button>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
+
+// Combined Selective Sync Interface
+export const SelectiveSyncInterface: React.FC = () => {
+  const { projects, storageService } = useAppContext();
+  const [selectedProject, setSelectedProject] = useState<string>('');
+
+  const handleProjectSync = async (projectIds: string[], direction: 'upload' | 'download') => {
+    if (direction === 'upload') {
+      // Upload selected projects to cloud
+      const selectedProjects = projects.filter(p => projectIds.includes(p.id));
+      await storageService.saveProjects(selectedProjects);
+    } else {
+      // Download selected projects from cloud
+      await storageService.forceSyncFromSupabase();
+    }
+  };
+
+  const handleTaskSync = async (taskIds: string[], direction: 'upload' | 'download') => {
+    // Implementation would depend on your task storage structure
+    // This is a simplified version
+    if (direction === 'upload') {
+      // Upload selected tasks
+      const allTasks = projects.flatMap(p => p.tasks || []);
+      const selectedTasks = allTasks.filter(t => taskIds.includes(t.id));
+      // Would need specific task sync logic here
+    } else {
+      // Download selected tasks
+      await storageService.forceSyncFromSupabase();
+    }
+  };
+
+  const getProjectTasks = (projectId: string) => {
+    const project = projects.find(p => p.id === projectId);
+    return project?.tasks || [];
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold mb-2">Selective Sync</h2>
+        <p className="text-muted-foreground">
+          Choose specific projects and tasks to sync for offline work or to update with latest changes.
+        </p>
+      </div>
+
+      <Tabs defaultValue="projects" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="projects">Project Sync</TabsTrigger>
+          <TabsTrigger value="tasks">Task Sync</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="projects">
+          <ProjectSyncSelector
+            projects={projects}
+            onSelectiveSync={handleProjectSync}
+          />
+        </TabsContent>
+
+        <TabsContent value="tasks">
+          <div className="space-y-4">
+            <div>
+              <Label>Select Project</Label>
+              <Select value={selectedProject} onValueChange={setSelectedProject}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Choose a project to sync tasks" />
+                </SelectTrigger>
+                <SelectContent>
+                  {projects.map(project => (
+                    <SelectItem key={project.id} value={project.id}>
+                      {project.name} ({project.tasks?.length || 0} tasks)
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {selectedProject && (
+              <TaskSyncSelector
+                projectId={selectedProject}
+                tasks={getProjectTasks(selectedProject)}
+                onSelectiveSync={handleTaskSync}
+              />
+            )}
+          </div>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+};
+
+// Offline Preparation Component
+export const OfflinePreparation: React.FC = () => {
+  const { projects, storageService } = useAppContext();
+  const [isPreparingOffline, setIsPreparingOffline] = useState(false);
+  const [selectedProjects, setSelectedProjects] = useState<Set<string>>(new Set());
+  const { toast } = useToast();
+
+  const handlePrepareOffline = async () => {
+    if (selectedProjects.size === 0) {
+      toast({
+        title: "No Projects Selected",
+        description: "Please select projects to prepare for offline work",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsPreparingOffline(true);
+    try {
+      // Download selected projects and their dependencies
+      const projectList = Array.from(selectedProjects);
+      await storageService.forceSyncFromSupabase();
+      
+      // Additional offline preparation logic could go here
+      // - Prefetch related data
+      // - Optimize local storage
+      // - Setup conflict resolution
+      
+      toast({
+        title: "Offline Preparation Complete",
+        description: `${selectedProjects.size} projects are ready for offline work`
+      });
+      
+      setSelectedProjects(new Set());
+    } catch (error) {
+      toast({
+        title: "Preparation Failed",
+        description: error instanceof Error ? error.message : "Failed to prepare for offline work",
+        variant: "destructive"
+      });
+    } finally {
+      setIsPreparingOffline(false);
+    }
+  };
+
+  const getProjectSummary = () => {
+    const selectedProjectsList = projects.filter(p => selectedProjects.has(p.id));
+    const totalTasks = selectedProjectsList.reduce((sum, p) => sum + (p.tasks?.length || 0), 0);
+    const totalMembers = new Set(selectedProjectsList.flatMap(p => p.teamMembers?.map(tm => tm.userId) || [])).size;
+    
+    return { totalTasks, totalMembers };
+  };
+
+  const { totalTasks, totalMembers } = getProjectSummary();
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Download className="h-5 w-5" />
+          Prepare for Offline Work
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="text-sm text-muted-foreground">
+          Select projects to download and prepare for offline editing. This will ensure you have
+          the latest data and can work seamlessly without an internet connection.
+        </div>
+
+        <ProjectSyncSelector
+          projects={projects}
+          onSelectiveSync={async (projectIds) => {
+            setSelectedProjects(new Set(projectIds));
+          }}
+        />
+
+        {selectedProjects.size > 0 && (
+          <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="font-medium text-blue-900">
+                  Ready to prepare {selectedProjects.size} projects for offline work
+                </div>
+                <div className="text-sm text-blue-700">
+                  Includes {totalTasks} tasks and {totalMembers} team members
+                </div>
+              </div>
+              <Button
+                onClick={handlePrepareOffline}
+                disabled={isPreparingOffline}
+                className="flex items-center gap-2"
+              >
+                <Download className="h-4 w-4" />
+                {isPreparingOffline ? 'Preparing...' : 'Prepare Offline'}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        <div className="text-xs text-muted-foreground space-y-1">
+          <div><strong>What this does:</strong></div>
+          <div>• Downloads latest project data and tasks</div>
+          <div>• Syncs team member information</div>
+          <div>• Prepares conflict resolution for when you're back online</div>
+          <div>• Optimizes local storage for offline performance</div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
